@@ -1,249 +1,304 @@
-# Infrastructure as Code - AWS Deployment
+# Terraform Infrastructure - Network Latency Monitor
 
-This Terraform configuration provisions two EC2 instances in AWS:
-1. **Latency Monitor Server** - Runs the FastAPI application that measures latency
-2. **Target Server** - Simple web server that the monitor measures latency to
+This directory contains the complete Terraform infrastructure code for the Network Latency Monitor application, restructured into a production-ready modular architecture.
 
-## Architecture
+## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                          AWS VPC (10.0.0.0/16)                 │
-│                                                                 │
-│  ┌──────────────────────┐        ┌──────────────────────┐      │
-│  │   Public Subnet A    │        │   Public Subnet B    │      │
-│  │   (10.0.1.0/24)      │        │   (10.0.2.0/24)      │      │
-│  │                      │        │                      │      │
-│  │  ┌─────────────────┐ │        │  ┌─────────────────┐ │      │
-│  │  │ Latency Monitor │ │───────▶│  │  Target Server  │ │      │
-│  │  │   (FastAPI)     │ │ TCP:80 │  │    (Nginx)      │ │      │
-│  │  │   Port 8000     │ │        │  │   Port 80/443   │ │      │
-│  │  │                 │ │        │  │                 │ │      │
-│  │  └─────────────────┘ │        │  └─────────────────┘ │      │
-│  └──────────────────────┘        └──────────────────────┘      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+terraform/
+├── environments/           # Environment-specific configurations
+│   ├── dev/               # Development environment
+│   ├── staging/           # Staging environment (template)
+│   └── prod/              # Production environment
+├── modules/               # Reusable Terraform modules
+│   ├── networking/        # VPC, subnets, routing
+│   ├── security/          # Security groups, key pairs
+│   ├── compute/           # EC2 instances, EIPs
+│   └── latency-monitor/   # Complete solution module
+├── scripts/               # Automation scripts
+├── shared/                # Shared configurations
+└── README.md              # This file
 ```
 
-**Key Changes from Generic Setup:**
-- ✅ **Monitor measures YOUR target server** (not Google)
-- ✅ **Target server IP automatically configured** during deployment
-- ✅ **Uses your Docker image** from `lhdung/latency-app`
-- ✅ **Proper server-to-server monitoring** within VPC
+## 🚀 Quick Start
 
-## Prerequisites
+### 1. Setup Backend Infrastructure
 
-1. **AWS CLI configured** with appropriate credentials
-2. **Terraform installed** (>= 1.0)
-3. **SSH key pair** for EC2 access
-4. **Docker image** available at `lhdung/latency-app:latest`
-
-### Generate SSH Key Pair
+First, create the S3 bucket and DynamoDB table for Terraform state management:
 
 ```bash
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/latency-monitor
+cd terraform/scripts
+chmod +x setup-backend.sh
+./setup-backend.sh
 ```
 
-## Quick Deployment
+This creates:
+- S3 bucket for Terraform state (encrypted with KMS)
+- DynamoDB table for state locking
+- KMS key for encryption
+- Backend configuration files for each environment
 
-### **Option 1: Automated Script (Recommended)**
+### 2. Deploy Development Environment
+
 ```bash
-# From project root
-./deploy.sh
+cd terraform/scripts
+./deploy-environment.sh dev plan     # Review changes
+./deploy-environment.sh dev apply    # Deploy infrastructure
 ```
 
-This script will:
-1. Optionally build and push Docker image
-2. Deploy infrastructure with Terraform
-3. Wait for services to be ready
-4. Verify the deployment works
+### 3. Deploy Production Environment
 
-### **Option 2: Manual Deployment**
-
-1. **Navigate to terraform directory**:
-   ```bash
-   cd terraform/
-   ```
-
-2. **Copy and customize variables**:
-   ```bash
-   cp terraform.tfvars.example terraform.tfvars
-   # Edit terraform.tfvars with your public key and settings
-   ```
-
-3. **Initialize and deploy**:
-   ```bash
-   terraform init
-   terraform plan
-   terraform apply
-   ```
-
-4. **Get connection details**:
-   ```bash
-   terraform output
-   ```
-
-## Configuration Variables
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `aws_region` | AWS region for deployment | `us-east-1` | No |
-| `environment` | Environment name | `dev` | No |
-| `instance_type` | EC2 instance type | `t3.micro` | No |
-| `public_key` | SSH public key for EC2 access | - | **Yes** |
-| `ssh_allowed_cidr` | CIDR blocks allowed for SSH | `["0.0.0.0/0"]` | No |
-| `docker_image` | Docker image for latency monitor | `lhdung/latency-app:latest` | No |
-
-## Outputs
-
-After deployment, Terraform provides:
-
-- **IP Addresses**: Public IPs for both servers
-- **Endpoints**: Direct URLs to access services
-- **SSH Commands**: Ready-to-use SSH connection commands
-- **Monitoring URLs**: Links to latency data and metrics
-- **Verification Commands**: curl commands to test everything
-
-## Services Deployed
-
-### Latency Monitor Server
-- **FastAPI application** running in Docker
-- **Automatically configured** to monitor the target server
-- **Endpoints**:
-  - `http://IP:8000/` - Service info
-  - `http://IP:8000/latency` - JSON latency data
-  - `http://IP:8000/metrics` - Prometheus metrics
-  - `http://IP:8000/health` - Health check
-- **Measures TCP connect time** to target server every 5 seconds
-
-### Target Server  
-- **Nginx web server** with monitoring-friendly endpoints
-- **Endpoints**:
-  - `http://IP/` - Main page with server info
-  - `http://IP/status` - JSON status
-  - `http://IP/health` - Health check
-  - `http://IP/info` - Server information
-  - `http://IP/metrics` - Basic server metrics
-  - `https://IP/` - HTTPS version (self-signed cert)
-
-## Post-Deployment Verification
-
-### **Automatic Verification (if using deploy.sh)**
-The deployment script automatically tests all endpoints.
-
-### **Manual Verification**
-
-1. **Check latency monitor**:
-   ```bash
-   curl http://LATENCY_MONITOR_IP:8000/latency
-   ```
-   Should show latency to YOUR target server, not Google!
-
-2. **Check target server**:
-   ```bash
-   curl http://TARGET_SERVER_IP/status
-   ```
-
-3. **Verify monitoring is working**:
-   ```bash
-   # Check that target_host matches your target server IP
-   curl http://LATENCY_MONITOR_IP:8000/latency | grep target_host
-   ```
-
-4. **SSH to servers**:
-   ```bash
-   ssh -i ~/.ssh/latency-monitor ubuntu@LATENCY_MONITOR_IP
-   ssh -i ~/.ssh/latency-monitor ubuntu@TARGET_SERVER_IP
-   ```
-
-## How It Works
-
-1. **Infrastructure Creation**: Terraform creates VPC, subnets, security groups, and EC2 instances
-2. **Target Server Setup**: Cloud-init installs Nginx and configures monitoring endpoints
-3. **Monitor Server Setup**: Cloud-init pulls your Docker image and configures it to monitor the target server
-4. **Automatic Configuration**: Target server IP is automatically passed to the monitor app
-5. **Service Startup**: Both services start automatically and begin monitoring
-
-## Monitoring Flow
-
-```
-┌─────────────────┐    TCP Connect    ┌─────────────────┐
-│ Monitor Server  │ ─────────────────▶ │ Target Server   │
-│ (FastAPI App)   │   Every 5 sec     │ (Nginx)         │
-│ Port 8000       │   Measure time    │ Port 80         │
-└─────────────────┘                   └─────────────────┘
-         │                                     ▲
-         ▼                                     │
-┌─────────────────┐                           │
-│ HTTP Endpoints  │                           │
-│ /latency        │                           │
-│ /metrics        │                           │
-│ /health         │                           │
-└─────────────────┘                           │
-         │                                     │
-         ▼                                     │
-┌─────────────────┐                           │
-│ Your Browser/   │ ──────────────────────────┘
-│ Monitoring Tool │    (Optional verification)
-└─────────────────┘
-```
-
-## Cleanup
-
-To destroy all resources:
 ```bash
+cd terraform/scripts
+./deploy-environment.sh prod plan    # Review changes
+./deploy-environment.sh prod apply   # Deploy with approval
+```
+
+## 📁 Module Structure
+
+### Core Modules
+
+#### `modules/networking/`
+- **Purpose**: VPC, subnets, internet gateway, routing
+- **Features**: 
+  - Multi-AZ deployment
+  - Optional NAT Gateway for private subnets
+  - VPC Flow Logs for security monitoring
+  - Configurable CIDR blocks
+
+#### `modules/security/`
+- **Purpose**: Security groups, key pairs
+- **Features**:
+  - Separate security groups for monitor and target
+  - Configurable CIDR restrictions
+  - Internal communication rules
+  - Optional monitoring tools access
+
+#### `modules/compute/`
+- **Purpose**: EC2 instances, Elastic IPs
+- **Features**:
+  - Auto-configured with user data scripts
+  - CloudWatch monitoring and alarms
+  - EBS encryption
+  - Instance metadata service v2 (IMDSv2)
+
+#### `modules/latency-monitor/`
+- **Purpose**: Complete solution combining all modules
+- **Features**:
+  - End-to-end infrastructure deployment
+  - Environment-specific configurations
+  - Comprehensive outputs for integration
+
+## 🌍 Environment Configurations
+
+### Development (`environments/dev/`)
+- **Purpose**: Development and testing
+- **Features**:
+  - Cost-optimized settings (t3.micro instances)
+  - Relaxed security for development
+  - No NAT Gateway or detailed monitoring
+  - Additional dev-specific resources
+
+### Production (`environments/prod/`)
+- **Purpose**: Production workloads
+- **Features**:
+  - Production-grade instances (t3.small+)
+  - Enhanced security and compliance
+  - VPC Flow Logs and detailed monitoring
+  - CloudWatch alarms and SNS notifications
+  - KMS encryption for all data
+  - Strict CIDR restrictions
+
+## 🔧 Configuration
+
+### Required Variables
+
+Each environment requires these essential variables in `terraform.tfvars`:
+
+```hcl
+# SSH Key (generate with: ssh-keygen -t rsa -b 4096 -f ~/.ssh/{env}-latency-monitor)
+public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC..."
+
+# Network access (restrict for production)
+ssh_allowed_cidr = ["YOUR.IP.ADDRESS/32"]
+
+# Application settings
+docker_image = "lhdung/latency-app:latest"
+instance_type = "t3.micro"  # or t3.small for production
+```
+
+### Environment-Specific Settings
+
+| Setting | Development | Production |
+|---------|-------------|------------|
+| Instance Type | `t3.micro` | `t3.small+` |
+| VPC CIDR | `10.0.0.0/16` | `10.100.0.0/16` |
+| SSH Access | Open (dev only) | Restricted |
+| Monitoring | Basic | Detailed |
+| Encryption | Basic | Full KMS |
+| Flow Logs | Disabled | Enabled |
+| Alarms | Disabled | Enabled |
+
+## 🔒 Security Features
+
+### Development Security
+- ✅ Basic encryption
+- ✅ Security groups
+- ⚠️ Open SSH (configurable)
+- ⚠️ No flow logs (cost optimization)
+
+### Production Security
+- ✅ KMS encryption for all data
+- ✅ VPC Flow Logs for network monitoring
+- ✅ Restricted SSH access (validation enforced)
+- ✅ CloudWatch detailed monitoring
+- ✅ SNS alerts for failures
+- ✅ IAM roles with least privilege
+- ✅ IMDSv2 enforcement
+- ✅ S3 bucket security policies
+
+## 📊 Monitoring & Alerting
+
+### CloudWatch Metrics
+- EC2 instance health checks
+- Application health endpoints
+- Custom latency metrics via Prometheus
+
+### Alerting (Production)
+- Instance status check failures
+- Application health check failures
+- SNS notifications to operations team
+
+### Logs
+- VPC Flow Logs (production)
+- Application logs via CloudWatch
+- S3 lifecycle policies for log retention
+
+## 🔄 CI/CD Integration
+
+GitHub Actions workflow (`.github/workflows/terraform-cicd.yml`) provides:
+
+### Validation Pipeline
+- Terraform format checking
+- Module validation
+- Security scanning (Checkov, TFSec)
+- Linting (TFLint)
+
+### Deployment Pipeline
+- **Development**: Auto-deploy on `develop` branch
+- **Production**: Manual approval required on `main` branch
+- Plan artifacts for review
+- Automated testing after deployment
+
+### Required GitHub Secrets
+```
+AWS_ACCESS_KEY_ID          # Development AWS credentials
+AWS_SECRET_ACCESS_KEY      # Development AWS credentials
+AWS_ACCESS_KEY_ID_PROD     # Production AWS credentials
+AWS_SECRET_ACCESS_KEY_PROD # Production AWS credentials
+```
+
+## 🚀 Deployment Commands
+
+### Manual Deployment
+```bash
+# Initialize and plan
+cd terraform/environments/dev
+terraform init -backend-config=backend-config.hcl
+terraform plan -var-file=terraform.tfvars
+
+# Apply changes
+terraform apply -var-file=terraform.tfvars
+
+# Destroy (when needed)
+terraform destroy -var-file=terraform.tfvars
+```
+
+### Automated Deployment
+```bash
+# Using the deployment script
+cd terraform/scripts
+./deploy-environment.sh dev apply
+./deploy-environment.sh prod apply
+```
+
+## 📋 Prerequisites
+
+### Tools Required
+- Terraform >= 1.0
+- AWS CLI configured
+- Bash shell (for automation scripts)
+
+### AWS Permissions
+Your AWS credentials need permissions for:
+- EC2 (instances, security groups, key pairs)
+- VPC (networking resources)
+- S3 (state storage)
+- DynamoDB (state locking)
+- KMS (encryption keys)
+- CloudWatch (monitoring, logs)
+- SNS (notifications)
+- IAM (roles and policies)
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+**Backend not found:**
+```bash
+# Run the backend setup script first
+cd terraform/scripts
+./setup-backend.sh
+```
+
+**Permission denied:**
+```bash
+# Ensure scripts are executable
+chmod +x terraform/scripts/*.sh
+```
+
+**State locked:**
+```bash
+# Force unlock if needed (use carefully)
+terraform force-unlock LOCK_ID
+```
+
+### Validation Commands
+```bash
+# Validate all modules
 cd terraform
-terraform destroy
+terraform fmt -check -recursive
+terraform validate
+
+# Test specific environment
+cd environments/dev
+terraform plan -var-file=terraform.tfvars
 ```
 
-## Security Notes
+## 🎯 Migration from Legacy
 
-- **SSH Access**: Restrict `ssh_allowed_cidr` to your IP address
-- **VPC Isolation**: Servers communicate within private VPC
-- **Security Groups**: Only necessary ports are opened
-- **No SSL Required**: Internal VPC communication is secure by default
+To migrate from the old monolithic structure:
 
-## Cost Estimation
+1. **Backup existing state** (if any)
+2. **Run backend setup** to create new infrastructure
+3. **Import existing resources** (if needed)
+4. **Deploy new modular structure**
+5. **Verify functionality**
+6. **Remove legacy files**
 
-With default `t3.micro` instances:
-- **2 × t3.micro**: ~$16/month (AWS Free Tier eligible)
-- **2 × Elastic IPs**: ~$7/month  
-- **Data Transfer**: Minimal cost (internal VPC traffic is free)
-- **Total**: ~$23/month (or ~$9/month with Free Tier)
+## 📚 Additional Resources
 
-## Troubleshooting
+- [Terraform Best Practices](https://www.terraform.io/docs/cloud/guides/recommended-practices/)
+- [AWS Provider Documentation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [Module Development](https://www.terraform.io/docs/modules/index.html)
 
-### **Services not responding**:
-```bash
-# SSH to servers and check status
-ssh -i ~/.ssh/latency-monitor ubuntu@MONITOR_IP
-sudo systemctl status latency-monitor
+## 🤝 Contributing
 
-ssh -i ~/.ssh/latency-monitor ubuntu@TARGET_IP
-sudo systemctl status nginx
-```
+1. Make changes in feature branches
+2. Test in development environment
+3. Submit pull request with plan output
+4. Review and approve for production deployment
 
-### **Wrong target being monitored**:
-```bash
-# Check target configuration
-curl http://MONITOR_IP:8000/latency | grep target_host
-# Should show your target server IP, not google.com
-```
+---
 
-### **View service logs**:
-```bash
-# Monitor server
-sudo journalctl -u latency-monitor.service -f
-
-# Target server
-sudo tail -f /var/log/nginx/target-server.access.log
-```
-
-### **Update application**:
-```bash
-# SSH to monitor server
-ssh -i ~/.ssh/latency-monitor ubuntu@MONITOR_IP
-./update-app.sh
-```
-
-The infrastructure is designed to automatically configure server-to-server latency monitoring without any manual configuration! 🚀
+This modular architecture provides a production-ready, scalable, and maintainable infrastructure foundation for the Network Latency Monitor application.

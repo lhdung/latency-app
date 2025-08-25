@@ -1,4 +1,15 @@
-# AWS Provider Configuration
+# LEGACY FILE - MIGRATED TO MODULAR STRUCTURE
+# 
+# This file has been replaced by the new modular architecture.
+# Please use the environment-specific configurations instead:
+#
+# - Development: terraform/environments/dev/
+# - Staging:     terraform/environments/staging/
+# - Production:  terraform/environments/prod/
+#
+# See MIGRATION.md for migration instructions.
+#
+# AWS Provider Configuration (LEGACY)
 terraform {
   required_version = ">= 1.0"
   required_providers {

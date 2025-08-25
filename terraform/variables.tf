@@ -19,14 +19,12 @@ variable "instance_type" {
 variable "public_key" {
   description = "Public key for EC2 key pair"
   type        = string
-  # Generate with: ssh-keygen -t rsa -b 4096 -f ~/.ssh/latency-monitor
-  # Then use: cat ~/.ssh/latency-monitor.pub
 }
 
 variable "ssh_allowed_cidr" {
   description = "CIDR blocks allowed for SSH access"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # Restrict this to your IP for better security
+  default     = ["0.0.0.0/0"]
 }
 
 variable "docker_image" {
